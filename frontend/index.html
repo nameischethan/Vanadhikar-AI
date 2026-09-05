@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vanadhikar AI — Forest Rights Act Geospatial Command Deck</title>
+
+  <!-- External CDNs -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="bg-slate-950 text-slate-100 overflow-hidden relative select-none">
+
+  <!-- ==================== SPATIAL VIEWPORT (FULLSCREEN) ==================== -->
+  <div id="webgis-map" class="absolute inset-0 z-0"></div>
+  <div id="three-canvas-container" class="absolute inset-0 z-0 hidden"></div>
+
+  <!-- ==================== FLOATING ISLAND 1: TOP COMMAND BAR ==================== -->
+  <header class="absolute top-4 left-4 right-4 z-20 deck-island h-14 rounded-2xl px-4 flex items-center justify-between">
+    <!-- Brand & Beacon -->
+    <div class="flex items-center space-x-3 shrink-0">
+      <div class="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-lg shadow-inner">
+        🌲
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="font-extrabold text-sm tracking-tight text-white">Vanadhikar AI</span>
+          <span class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-[10px] font-mono text-emerald-300">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            LIVE CADASTRE
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Center: Search & 2D/3D Mode Switcher -->
+    <div class="hidden md:flex items-center space-x-3">
+      <!-- Quick Search Bar -->
+      <div class="relative w-72">
+        <input
+          type="text"
+          id="quick-search"
+          placeholder="Search claimant, tribe, village..."
+          oninput="handleQuickSearch(this.value)"
+          class="w-full bg-slate-900/90 border border-slate-700/60 rounded-xl px-3.5 py-1.5 pl-9 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
+        />
+        <span class="absolute left-3 top-2 text-slate-500 text-xs">🔍</span>
+      </div>
+
+      <!-- 2D / 3D Mode Toggle Pill -->
+      <div class="bg-slate-900/90 p-1 rounded-xl border border-slate-700/60 flex items-center text-xs font-semibold">
+        <button id="btn-mode-2d" onclick="switchSpatialMode('2d')" class="px-3 py-1 rounded-lg bg-emerald-600 text-white shadow transition">
+          🗺️ 2D WebGIS
+        </button>
+        <button id="btn-mode-3d" onclick="switchSpatialMode('3d')" class="px-3 py-1 rounded-lg text-slate-400 hover:text-white transition">
+          🌐 3D Elevation
+        </button>
+      </div>
+    </div>
+
+    <!-- Right Actions & Metrics -->
+    <div class="flex items-center space-x-3 text-xs">
+      <div class="hidden lg:flex items-center space-x-4 bg-slate-900/60 px-3 py-1.5 rounded-xl border border-white/5">
+        <div><span class="text-slate-400">Claims:</span> <strong id="top-stat-claims" class="text-emerald-400 font-mono">1,200</strong></div>
+        <div class="h-3 w-px bg-slate-800"></div>
+        <div><span class="text-slate-400">Anomalies:</span> <strong id="top-stat-anomalies" class="text-rose-400 font-mono">753</strong></div>
+        <div class="h-3 w-px bg-slate-800"></div>
+        <div><span class="text-slate-400">Districts:</span> <strong class="text-cyan-400 font-mono">10</strong></div>
+      </div>
+
+      <button onclick="triggerRescan()" id="rescan-btn" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-xl shadow flex items-center gap-1.5 transition">
+        <span>⚡</span> Rescan AI
+      </button>
+
+      <button onclick="openDecisionModal()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1.5 rounded-xl shadow flex items-center gap-1.5 transition">
+        <span>📊</span> Decision Dossier
+      </button>
+    </div>
+  </header>
+
+  <!-- ==================== FLOATING ISLAND 2: LEFT CONTROL DOCK ==================== -->
+  <aside id="left-dock" class="absolute top-20 left-4 z-20 w-80 deck-island rounded-2xl flex flex-col max-h-[calc(100vh-170px)] overflow-hidden transition-all duration-300">
+    <!-- Dock Header -->
+    <div class="p-3.5 border-b border-white/5 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="text-emerald-400 text-xs font-bold">⚙️</span>
+        <span class="text-xs font-bold text-slate-200 uppercase tracking-wider">Spatial Layer Control</span>
+      </div>
+      <button onclick="toggleLeftDock()" class="text-slate-400 hover:text-white p-1 rounded-lg text-xs" title="Collapse Dock">◂</button>
+    </div>
+
+    <div class="p-4 overflow-y-auto space-y-4 text-xs">
+      <!-- Basemap Switcher -->
+      <div>
+        <label class="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Basemap Provider</label>
+        <div class="grid grid-cols-3 gap-1.5">
+          <button onclick="changeBasemap('dark')" data-bm="dark" class="bm-btn py-1.5 rounded-lg bg-emerald-600/30 border border-emerald-500 text-white font-medium text-center transition">
+            Dark
+          </button>
+          <button onclick="changeBasemap('satellite')" data-bm="satellite" class="bm-btn py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 font-medium text-center hover:text-white transition">
+            Satellite
+          </button>
+          <button onclick="changeBasemap('topo')" data-bm="topo" class="bm-btn py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 font-medium text-center hover:text-white transition">
+            Terrain
+          </button>
+        </div>
+      </div>
+
+      <!-- State & District Selector -->
+      <div class="space-y-2.5 pt-1 border-t border-white/5">
+        <div>
+          <label class="block text-slate-400 text-[11px] font-medium mb-1">State Scope</label>
+          <select id="sel-state" onchange="onFilterChange()" class="w-full bg-slate-900 border border-slate-700/80 rounded-xl p-2 text-white outline-none focus:border-emerald-500">
+            <option value="">All Monitored States (5)</option>
+            <option value="Odisha">Odisha (Mayurbhanj, Rayagada, Sundargarh)</option>
+            <option value="Madhya Pradesh">Madhya Pradesh (Dindori, Mandla, Balaghat)</option>
+            <option value="Chhattisgarh">Chhattisgarh (Bastar, Surguja)</option>
+            <option value="Maharashtra">Maharashtra (Gadchiroli)</option>
+            <option value="Jharkhand">Jharkhand (West Singhbhum)</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-slate-400 text-[11px] font-medium mb-1">District Boundary</label>
+          <select id="sel-district" onchange="onDistrictChange()" class="w-full bg-slate-900 border border-slate-700/80 rounded-xl p-2 text-white outline-none focus:border-emerald-500">
+            <option value="">All 10 Tribal Districts</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-slate-400 text-[11px] font-medium mb-1">Tenure / Claim Type</label>
+          <select id="sel-type" onchange="onFilterChange()" class="w-full bg-slate-900 border border-slate-700/80 rounded-xl p-2 text-white outline-none focus:border-emerald-500">
+            <option value="">All Claim Types (IFR, CFR, CFRR)</option>
+            <option value="IFR">Individual Forest Rights (IFR)</option>
+            <option value="CFR">Community Forest Rights (CFR)</option>
+            <option value="CFRR">Community Forest Resource (CFRR)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Layer Visibility Toggles -->
+      <div class="space-y-2 pt-2 border-t border-white/5">
+        <label class="flex items-center justify-between text-slate-300 cursor-pointer">
+          <span class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+            <span>District FRA Boundaries</span>
+          </span>
+          <input type="checkbox" id="chk-layer-dist" checked onchange="toggleLayer('districts', this.checked)" class="rounded text-emerald-500 focus:ring-0" />
+        </label>
+
+        <label class="flex items-center justify-between text-slate-300 cursor-pointer">
+          <span class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-sm bg-emerald-700 border border-emerald-400"></span>
+            <span>ISRO Forest Compartments</span>
+          </span>
+          <input type="checkbox" id="chk-layer-fc" checked onchange="toggleLayer('forest', this.checked)" class="rounded text-emerald-500 focus:ring-0" />
+        </label>
+
+        <label class="flex items-center justify-between text-rose-400 font-semibold cursor-pointer p-2 rounded-xl bg-rose-950/20 border border-rose-900/40 mt-2">
+          <span>Highlight Anomalies Only ⚠️</span>
+          <input type="checkbox" id="chk-anomaly-only" onchange="onFilterChange()" class="rounded text-rose-500 focus:ring-0" />
+        </label>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ==================== FLOATING ISLAND 3: RIGHT ANOMALY TRIAGE DOCK ==================== -->
+  <aside id="right-dock" class="absolute top-20 right-4 z-20 w-88 deck-island rounded-2xl flex flex-col max-h-[calc(100vh-170px)] overflow-hidden transition-all duration-300">
+    <div class="p-3.5 border-b border-white/5 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="text-rose-400 text-xs font-bold">⚠️</span>
+        <span class="text-xs font-bold text-slate-200 uppercase tracking-wider">AI Anomaly Stream</span>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <span id="triage-badge-count" class="px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-800 text-[10px] font-mono font-bold">--</span>
+        <button onclick="toggleRightDock()" class="text-slate-400 hover:text-white p-1 rounded-lg text-xs" title="Collapse Dock">▸</button>
+      </div>
+    </div>
+
+    <!-- Severity Filter Tabs -->
+    <div class="px-3 pt-2.5 pb-1 flex gap-1 border-b border-white/5 text-[11px]">
+      <button onclick="setTriageSeverity('ALL')" data-sev="ALL" class="sev-btn px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-semibold">All</button>
+      <button onclick="setTriageSeverity('CRITICAL')" data-sev="CRITICAL" class="sev-btn px-2.5 py-1 rounded-lg bg-slate-900 text-slate-400 hover:text-white">Critical</button>
+      <button onclick="setTriageSeverity('HIGH')" data-sev="HIGH" class="sev-btn px-2.5 py-1 rounded-lg bg-slate-900 text-slate-400 hover:text-white">High</button>
+      <button onclick="setTriageSeverity('MEDIUM')" data-sev="MEDIUM" class="sev-btn px-2.5 py-1 rounded-lg bg-slate-900 text-slate-400 hover:text-white">Medium</button>
+    </div>
+
+    <!-- Scrollable Triage Cards Stream -->
+    <div id="triage-stream" class="p-3 overflow-y-auto space-y-2 flex-1 text-xs">
+      <div class="text-slate-500 italic p-4 text-center">Loading AI anomaly stream...</div>
+    </div>
+  </aside>
+
+  <!-- ==================== FLOATING ISLAND 4: BOTTOM PIPELINE SCRUBBER ==================== -->
+  <footer class="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 deck-island rounded-2xl px-4 py-2.5 flex items-center space-x-3 shadow-2xl">
+    <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0 flex items-center gap-1.5">
+      <span>⏱️</span> FRA Stage:
+    </span>
+
+    <div class="flex items-center space-x-1 text-xs font-semibold">
+      <button onclick="filterByStage('ALL')" data-stage="ALL" class="stage-pill active px-3 py-1.5 rounded-xl border border-transparent text-slate-300 hover:text-white">
+        All Claims (1,200)
+      </button>
+      <span class="text-slate-600 text-xs">→</span>
+      <button onclick="filterByStage('SUBMITTED')" data-stage="SUBMITTED" class="stage-pill px-3 py-1.5 rounded-xl border border-transparent text-slate-400 hover:text-white">
+        Submitted (180)
+      </button>
+      <span class="text-slate-600 text-xs">→</span>
+      <button onclick="filterByStage('GS_VERIFIED')" data-stage="GS_VERIFIED" class="stage-pill px-3 py-1.5 rounded-xl border border-transparent text-slate-400 hover:text-white">
+        Gram Sabha (204)
+      </button>
+      <span class="text-slate-600 text-xs">→</span>
+      <button onclick="filterByStage('SDLC_REVIEW')" data-stage="SDLC_REVIEW" class="stage-pill px-3 py-1.5 rounded-xl border border-transparent text-slate-400 hover:text-white">
+        SDLC Review (240)
+      </button>
+      <span class="text-slate-600 text-xs">→</span>
+      <button onclick="filterByStage('DLC_APPROVED')" data-stage="DLC_APPROVED" class="stage-pill px-3 py-1.5 rounded-xl border border-transparent text-slate-400 hover:text-white">
+        DLC Approved (204)
+      </button>
+      <span class="text-slate-600 text-xs">→</span>
+      <button onclick="filterByStage('TITLE_ISSUED')" data-stage="TITLE_ISSUED" class="stage-pill px-3 py-1.5 rounded-xl border border-transparent text-emerald-400 hover:text-white">
+        Patta Issued (216)
+      </button>
+    </div>
+  </footer>
+
+  <!-- ==================== SLIDE-OVER CLAIM INSPECTOR DRAWER ==================== -->
+  <aside id="inspector-drawer" class="absolute top-0 right-0 w-96 h-full deck-island z-30 transform translate-x-full transition-transform duration-300 flex flex-col shadow-2xl">
+    <div class="p-4 border-b border-white/10 flex justify-between items-center bg-slate-900/60">
+      <div class="flex items-center gap-2.5">
+        <div id="inspector-avatar" class="w-8 h-8 rounded-lg bg-emerald-600/30 border border-emerald-500/50 flex items-center justify-center font-bold text-xs text-emerald-300">
+          FR
+        </div>
+        <div>
+          <h3 id="inspector-id" class="font-bold text-xs font-mono text-white">FRA-OD-MAY-2024-001</h3>
+          <p class="text-[10px] text-slate-400">Parcel Cadastral Record</p>
+        </div>
+      </div>
+      <button onclick="closeInspector()" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 text-base">✕</button>
+    </div>
+    <div id="inspector-content" class="p-4 overflow-y-auto flex-1 space-y-3.5 text-xs">
+      <!-- Populated dynamically -->
+    </div>
+  </aside>
+
+  <!-- ==================== EXECUTIVE DECISION DOSSIER MODAL ==================== -->
+  <div id="decision-modal" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-md hidden flex items-center justify-center p-4">
+    <div class="deck-island rounded-3xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden border border-white/10">
+      <!-- Modal Header -->
+      <div class="p-5 border-b border-white/10 flex justify-between items-center bg-slate-900/70">
+        <div>
+          <h2 id="modal-dossier-title" class="text-base font-extrabold text-white flex items-center gap-2">
+            <span>📊</span> Executive Decision Dossier: Mayurbhanj (Odisha)
+          </h2>
+          <p class="text-xs text-slate-400">Ministry of Tribal Affairs (MoTA) Monitoring & Legal Synthesis</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="window.print()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded-xl border border-slate-700 transition">
+            🖨️ Print
+          </button>
+          <button onclick="closeDecisionModal()" class="text-slate-400 hover:text-white p-1.5 rounded-xl hover:bg-slate-800 text-base">✕</button>
+        </div>
+      </div>
+
+      <!-- Modal Body -->
+      <div id="modal-dossier-body" class="p-6 overflow-y-auto space-y-6">
+        <!-- Circular Risk Gauge & Key Scorecards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <!-- SVG Circular Gauge -->
+          <div class="deck-card p-4 rounded-2xl flex flex-col items-center justify-center">
+            <div class="relative w-28 h-28 flex items-center justify-center">
+              <svg class="gauge-svg w-28 h-28" viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r="42" stroke="rgba(255,255,255,0.08)" stroke-width="8" fill="none"></circle>
+                <circle id="gauge-circle" cx="50" cy="50" r="42" stroke="#f43f5e" stroke-width="8" stroke-dasharray="264" stroke-dashoffset="120" stroke-linecap="round" fill="none"></circle>
+              </svg>
+              <div class="absolute flex flex-col items-center">
+                <span id="gauge-score-val" class="font-extrabold text-2xl text-white font-mono">58</span>
+                <span class="text-[9px] text-slate-400 uppercase font-bold tracking-wider">Risk Index</span>
+              </div>
+            </div>
+            <span id="gauge-tier-label" class="mt-2 text-xs font-bold text-amber-400 px-2.5 py-0.5 rounded-full bg-amber-950/60 border border-amber-800">
+              ELEVATED RISK
+            </span>
+          </div>
+
+          <!-- Summary Metric Cards -->
+          <div class="deck-card p-4 rounded-2xl flex flex-col justify-between">
+            <span class="text-slate-400 text-xs font-medium">Titles Distribution Ratio</span>
+            <div class="flex items-baseline gap-2">
+              <span id="modal-conv-rate" class="text-3xl font-extrabold text-emerald-400 font-mono">17.5%</span>
+              <span class="text-slate-400 text-xs">conversion</span>
+            </div>
+            <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+              <div id="modal-conv-bar" class="bg-emerald-500 h-1.5 rounded-full" style="width: 17.5%"></div>
+            </div>
+            <span class="text-[11px] text-slate-400">Total Approved Forest: <strong id="modal-area-ha" class="text-slate-200">4,380 Ha</strong></span>
+          </div>
+
+          <div class="deck-card p-4 rounded-2xl flex flex-col justify-between">
+            <span class="text-slate-400 text-xs font-medium">Statutory Inquiry Delays</span>
+            <div class="flex items-baseline gap-2">
+              <span id="modal-delay-count" class="text-3xl font-extrabold text-amber-400 font-mono">52</span>
+              <span class="text-slate-400 text-xs">claims &gt; 90 days</span>
+            </div>
+            <span class="text-[11px] text-slate-400">Average Processing Backlog: <strong id="modal-avg-delay" class="text-amber-300">148 Days</strong></span>
+            <span class="text-[10px] text-rose-400 font-mono">Ref: Rule 12A(3) Breach</span>
+          </div>
+        </div>
+
+        <!-- Formatted Legal Synthesis Markdown -->
+        <div id="modal-briefing-text" class="deck-card p-5 rounded-2xl text-slate-300 text-sm leading-relaxed space-y-3">
+          <div class="text-slate-500 italic">Synthesizing legal directives...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="three_terrain.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
